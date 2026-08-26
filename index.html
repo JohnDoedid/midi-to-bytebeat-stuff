@@ -378,6 +378,7 @@
             width: 100%;
             margin-top: 2px;
             min-height: 1.4em;
+            word-break: break-all;
         }
         .github-section .status-msg.success {
             color: var(--cyan);
@@ -642,9 +643,10 @@
                 <!-- GitHub API section -->
                 <div class="github-section">
                     <span class="label">load from repository</span>
-                    <input type="text" id="repoOwnerInput" placeholder="owner (e.g. JohnDoedid)" value="JohnDoedid" />
-                    <input type="text" id="repoNameInput" placeholder="repo (e.g. midi-to-bytebeat-stuff)" value="midi-to-bytebeat-stuff" />
+                    <input type="text" id="repoOwnerInput" placeholder="owner" value="JohnDoedid" />
+                    <input type="text" id="repoNameInput" placeholder="repo" value="midi-to-bytebeat-stuff" />
                     <input type="text" id="repoFolderInput" placeholder="folder (e.g. songs)" value="songs" />
+                    <input type="text" id="branchInput" placeholder="branch (main/master)" value="main" />
                     <input type="password" id="tokenInput" class="token-input" placeholder="GitHub token (optional)" />
                     <button class="btn" id="loadRepoBtn">Load from Repo</button>
                     <div class="status-msg" id="repoStatus">Enter your repo details and click Load.</div>
@@ -729,6 +731,7 @@
             const repoOwnerInput = document.getElementById('repoOwnerInput');
             const repoNameInput = document.getElementById('repoNameInput');
             const repoFolderInput = document.getElementById('repoFolderInput');
+            const branchInput = document.getElementById('branchInput');
             const tokenInput = document.getElementById('tokenInput');
             const loadRepoBtn = document.getElementById('loadRepoBtn');
             const repoStatus = document.getElementById('repoStatus');
@@ -753,7 +756,6 @@
 
             // sample-and-hold state
             let heldValue = 0;
-            let lastSampleCounter = 0;
 
             // ─── load token from sessionStorage ──────────────────────
 
@@ -917,6 +919,7 @@
                 const owner = repoOwnerInput.value.trim();
                 const repo = repoNameInput.value.trim();
                 const folder = repoFolderInput.value.trim();
+                const branch = branchInput.value.trim() || 'main';
                 const token = tokenInput.value.trim();
 
                 if (!owner || !repo) {
@@ -925,52 +928,49 @@
                     return;
                 }
 
-                // Store token if provided
                 storeToken(token);
 
-                repoStatus.textContent = 'Fetching files from ' + owner + '/' + repo + '/' + (folder || '') + '...';
+                repoStatus.textContent = `Fetching ${owner}/${repo} (${branch})...`;
                 repoStatus.className = 'status-msg';
                 loadRepoBtn.disabled = true;
 
                 try {
-                    // Use the GitHub API to get the tree
-                    // First, get the root tree recursively
-                    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
-                    const headers = {
-                        'Accept': 'application/vnd.github.v3+json'
-                    };
-                    if (token) {
-                        headers['Authorization'] = 'token ' + token;
-                    }
+                    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+                    if (token) headers['Authorization'] = 'token ' + token;
 
-                    const response = await fetch(treeUrl, { headers });
-                    if (!response.ok) {
-                        let errMsg = `GitHub API error: ${response.status}`;
-                        if (response.status === 401) {
-                            errMsg += ' — invalid or missing token.';
-                        } else if (response.status === 404) {
-                            errMsg += ' — repo or folder not found. Check owner/repo name.';
-                        } else if (response.status === 403) {
-                            errMsg += ' — rate limit exceeded. Try adding a token.';
-                        }
+                    // 1. Get the tree recursively
+                    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+                    const treeResp = await fetch(treeUrl, { headers });
+
+                    if (!treeResp.ok) {
+                        let errMsg = `GitHub API error (${treeResp.status})`;
+                        try {
+                            const errData = await treeResp.json();
+                            if (errData.message) errMsg += `: ${errData.message}`;
+                            // Provide extra hints for common errors
+                            if (treeResp.status === 404) errMsg += ' — branch not found. Try "main" or "master".';
+                            else if (treeResp.status === 401) errMsg += ' — invalid or missing token.';
+                            else if (treeResp.status === 403) errMsg += ' — rate limit exceeded. Add a token.';
+                        } catch (_) {}
                         throw new Error(errMsg);
                     }
 
-                    const data = await response.json();
-                    if (!data.tree) {
-                        throw new Error('No tree data returned from GitHub API.');
+                    const treeData = await treeResp.json();
+                    if (!treeData.tree) {
+                        throw new Error('No tree data returned from GitHub.');
                     }
 
-                    // Filter for .Bytebeat files in the specified folder
+                    // 2. Filter for .Bytebeat files in the specified folder
                     const folderPrefix = folder ? folder + '/' : '';
-                    const bytebeatFiles = data.tree.filter(item =>
+                    const bytebeatFiles = treeData.tree.filter(item =>
                         item.type === 'blob' &&
                         item.path.startsWith(folderPrefix) &&
                         (item.path.toLowerCase().endsWith('.bytebeat') || item.path.toLowerCase().endsWith('.txt'))
                     );
 
                     if (bytebeatFiles.length === 0) {
-                        repoStatus.textContent = `No .Bytebeat files found in ${folderPrefix || 'root'}.`;
+                        repoStatus.textContent =
+                            `No .Bytebeat files found in ${folderPrefix || 'root'} (branch: ${branch}).`;
                         repoStatus.className = 'status-msg error';
                         loadRepoBtn.disabled = false;
                         return;
@@ -979,19 +979,18 @@
                     repoStatus.textContent = `Found ${bytebeatFiles.length} files. Loading contents...`;
                     repoStatus.className = 'status-msg';
 
-                    // Load each file's content
+                    // 3. Load each file's content via the /contents endpoint
                     let loaded = 0;
                     for (const item of bytebeatFiles) {
                         try {
                             const contentUrl =
-                                `https://api.github.com/repos/${owner}/${repo}/contents/${item.path}`;
-                            const contentResponse = await fetch(contentUrl, { headers });
-                            if (!contentResponse.ok) continue;
-                            const contentData = await contentResponse.json();
+                                `https://api.github.com/repos/${owner}/${repo}/contents/${item.path}?ref=${branch}`;
+                            const contentResp = await fetch(contentUrl, { headers });
+                            if (!contentResp.ok) continue;
+                            const contentData = await contentResp.json();
                             if (contentData.content) {
                                 const content = atob(contentData.content.replace(/\s/g, ''));
                                 const fileName = item.path.split('/').pop();
-                                // Avoid duplicates
                                 if (!files.some(f => f.name === fileName)) {
                                     files.push({
                                         name: fileName,
@@ -1008,12 +1007,11 @@
                     }
 
                     if (loaded === 0) {
-                        repoStatus.textContent = 'Failed to load any files. Check your token permissions.';
+                        repoStatus.textContent = 'Failed to load any files. Check token permissions.';
                         repoStatus.className = 'status-msg error';
                     } else {
                         repoStatus.textContent = `✅ Loaded ${loaded} files from ${owner}/${repo}.`;
                         repoStatus.className = 'status-msg success';
-                        // Auto-select first file
                         if (files.length > 0 && activeFileIndex === -1) {
                             activeFileIndex = 0;
                             loadFileByIndex(0);
@@ -1164,14 +1162,12 @@
                 playFn = compiled;
                 sampleCounter = 0;
                 heldValue = 0;
-                lastSampleCounter = 0;
 
                 const bufferSize = 2048;
                 scriptNode = ctx.createScriptProcessor(bufferSize, 0, 1);
                 scriptNode.onaudioprocess = (e) => {
                     const out = e.outputBuffer.getChannelData(0);
                     for (let i = 0; i < out.length; i++) {
-                        // Sample-and-hold: only evaluate when sampleCounter % holdDivisor === 0
                         const shouldEvaluate = (sampleCounter % holdDivisor === 0);
                         let v;
                         if (shouldEvaluate) {
@@ -1182,7 +1178,7 @@
                             }
                             heldValue = v;
                         } else {
-                            v = heldValue; // hold the last value
+                            v = heldValue;
                         }
                         sampleCounter += speed;
                         out[i] = sampleToFloat(v, currentMode);
@@ -1303,10 +1299,11 @@
             playBtn.disabled = true;
             renderFileList();
 
-            // Auto-fill default repo values
+            // Auto-fill default values
             repoOwnerInput.value = 'JohnDoedid';
             repoNameInput.value = 'midi-to-bytebeat-stuff';
             repoFolderInput.value = 'songs';
+            branchInput.value = 'main';
 
         })();
     </script>
