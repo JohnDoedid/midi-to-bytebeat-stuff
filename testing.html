@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bytebeat · player</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+        /* ───────────────────────────────────────────────
+           RESET & BASE
+           ─────────────────────────────────────────────── */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        :root {
+            --bg: #07080c;
+            --panel: #0c0e16;
+            --panel-hover: #111624;
+            --border: #1a2540;
+            --border-light: #2a3a60;
+            --cyan: #00d4ff;
+            --cyan-dim: #0088aa;
+            --blue: #4a9eff;
+            --blue-deep: #1a3a6a;
+            --text: #e8edf5;
+            --text-dim: #8899bb;
+            --text-faint: #4a5a7a;
+            --danger: #ff6b6b;
+            --radius: 0px;
+            --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Consolas, monospace;
+            --shadow: 0 0 30px rgba(0, 180, 255, 0.04);
+        }
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 13.5px;
+            line-height: 1.5;
+        }
+        ::selection {
+            background: var(--cyan);
+            color: #0a0c14;
+        }
+        :focus-visible {
+            outline: 2px solid var(--cyan);
+            outline-offset: 2px;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 14px 18px 10px;
+        }
+
+        /* ─── header ─── */
+        .head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+            gap: 6px 14px;
+        }
+        .head h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .head h1 .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 0;
+            background: var(--cyan);
+            box-shadow: 0 0 16px var(--cyan);
+            display: inline-block;
+            transform: rotate(45deg);
+        }
+        .head .badge {
+            font-size: 10px;
+            color: var(--text-faint);
+            background: var(--panel);
+            padding: 4px 14px;
+            border: 1px solid var(--border);
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+        .head .badge code {
+            color: var(--cyan);
+            background: none;
+            font-size: 10px;
+        }
+
+        /* ─── main grid ─── */
+        .grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 14px;
+            flex: 1;
+            min-height: 0;
+            margin-top: 14px;
+        }
+        @media (max-width: 740px) {
+            .grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }
+        }
+
+        /* ─── file panel ─── */
+        .file-panel {
+            border: 1px solid var(--border);
+            background: var(--panel);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .file-panel .panel-head {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-faint);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-panel .panel-head .file-count {
+            font-weight: 400;
+            font-size: 10px;
+            background: var(--bg);
+            padding: 0 10px;
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+        .file-panel .search-box {
+            padding: 8px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .file-panel .search-box input {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 11px;
+            padding: 6px 10px;
+            transition: border-color 0.15s;
+        }
+        .file-panel .search-box input:focus {
+            outline: none;
+            border-color: var(--cyan-dim);
+        }
+        .file-panel .search-box input::placeholder {
+            color: var(--text-faint);
+        }
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .file-list .file-item {
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 11.5px;
+            border-left: 2px solid transparent;
+            transition: background 0.1s, border-color 0.1s;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            border-bottom: 1px solid rgba(26, 37, 64, 0.4);
+        }
+        .file-list .file-item:hover {
+            background: var(--panel-hover);
+            border-left-color: var(--cyan-dim);
+        }
+        .file-list .file-item.active {
+            background: rgba(0, 180, 255, 0.06);
+            border-left-color: var(--cyan);
+        }
+        .file-list .file-item .row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .file-list .file-item .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 500;
+            color: var(--text);
+        }
+        .file-list .file-item .meta {
+            font-size: 10px;
+            color: var(--text-faint);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-left: 2px;
+        }
+        .file-list .file-item .meta .tag {
+            background: rgba(0, 180, 255, 0.10);
+            color: var(--cyan-dim);
+            padding: 0 8px;
+            border: 1px solid rgba(0, 180, 255, 0.15);
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .file-list .file-item .meta .tag.original {
+            color: var(--blue);
+            border-color: rgba(74, 158, 255, 0.2);
+            background: rgba(74, 158, 255, 0.06);
+        }
+        .file-list .file-item .remove {
+            color: var(--text-faint);
+            font-size: 13px;
+            cursor: pointer;
+            padding: 0 4px;
+            transition: color 0.1s;
+            flex: none;
+        }
+        .file-list .file-item .remove:hover {
+            color: var(--danger);
+        }
+        .file-list .empty {
+            color: var(--text-faint);
+            font-size: 12px;
+            padding: 28px 14px;
+            text-align: center;
+        }
+        .file-panel .load-area {
+            padding: 10px 14px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .file-panel .load-area label {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-faint);
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            min-width: 80px;
+            font-weight: 500;
+            letter-spacing: 0.4px;
+        }
+        .file-panel .load-area label:hover {
+            border-color: var(--cyan-dim);
+            background: rgba(0, 180, 255, 0.04);
+        }
+        .file-panel .load-area input[type="file"] {
+            display: none;
+        }
+        .file-panel .load-area .file-meta-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            flex: 1 1 100%;
+            margin-top: 4px;
+        }
+        .file-panel .load-area .file-meta-inputs input,
+        .file-panel .load-area .file-meta-inputs select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 11px;
+            padding: 5px 8px;
+            flex: 1;
+            min-width: 80px;
+        }
+        .file-panel .load-area .file-meta-inputs input:focus,
+        .file-panel .load-area .file-meta-inputs select:focus {
+            outline: none;
+            border-color: var(--cyan-dim);
+        }
+        .file-panel .load-area .file-meta-inputs select {
+            flex: 0 1 auto;
+            cursor: pointer;
+        }
+        .file-panel .load-area .file-meta-inputs select option {
+            background: var(--panel);
+        }
+
+        /* ─── player panel ─── */
+        .player-panel {
+            border: 1px solid var(--border);
+            background: var(--panel);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+        }
+        .player-panel .code-area {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.15);
+        }
+        .player-panel .code-area textarea {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 12px;
+            line-height: 1.7;
+            padding: 8px 10px;
+            resize: vertical;
+            min-height: 80px;
+            max-height: 200px;
+            tab-size: 2;
+        }
+        .player-panel .code-area textarea:focus {
+            outline: none;
+            border-color: var(--cyan-dim);
+        }
+
+        /* scope */
+        .scope-wrap {
+            position: relative;
+            background: #05060a;
+            border-bottom: 1px solid var(--border);
+            height: 140px;
+        }
+        .scope-wrap canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: #05060a;
+        }
+
+        /* controls */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.1);
+        }
+        .controls button {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-family: var(--mono);
+            font-size: 12px;
+            padding: 5px 14px;
+            cursor: pointer;
+            transition: border-color 0.12s, color 0.12s, background 0.12s;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+        .controls button:hover {
+            border-color: var(--cyan-dim);
+            color: var(--cyan);
+            background: rgba(0, 180, 255, 0.04);
+        }
+        .controls button.primary {
+            background: var(--cyan);
+            border-color: var(--cyan);
+            color: #0a0c14;
+            font-weight: 600;
+        }
+        .controls button.primary:hover {
+            background: #00e4ff;
+            border-color: #00e4ff;
+            color: #0a0c14;
+        }
+        .controls button.primary:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            background: var(--border);
+            border-color: var(--border);
+            color: var(--text-faint);
+        }
+        .controls .mode-group {
+            display: flex;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .controls .mode-group button {
+            border: none;
+            border-radius: 0;
+            padding: 5px 12px;
+            font-size: 10.5px;
+            background: var(--panel);
+            color: var(--text-faint);
+            border-right: 1px solid var(--border);
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+        }
+        .controls .mode-group button:last-child {
+            border-right: none;
+        }
+        .controls .mode-group button.active {
+            background: var(--blue-deep);
+            color: var(--cyan);
+            border-color: var(--cyan-dim);
+        }
+        .controls .param-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10.5px;
+            color: var(--text-faint);
+            letter-spacing: 0.4px;
+        }
+        .controls .param-group input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 11px;
+            padding: 3px 6px;
+            width: 56px;
+            text-align: center;
+        }
+        .controls .param-group input:focus {
+            outline: none;
+            border-color: var(--cyan-dim);
+        }
+        .controls .status {
+            font-size: 11px;
+            color: var(--text-faint);
+            margin-left: auto;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .controls .playing-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-faint);
+            display: inline-block;
+            transform: rotate(45deg);
+        }
+        .controls .playing-dot.on {
+            background: var(--cyan);
+            box-shadow: 0 0 14px var(--cyan);
+            animation: pulse 0.9s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%,
+            100% {
+                opacity: 1;
+                transform: rotate(45deg) scale(1);
+            }
+            50% {
+                opacity: 0.3;
+                transform: rotate(45deg) scale(0.8);
+            }
+        }
+
+        /* footer */
+        .footer {
+            margin-top: 14px;
+            padding: 12px 0 6px;
+            border-top: 1px solid var(--border);
+            font-size: 10.5px;
+            color: var(--text-faint);
+            text-align: center;
+            letter-spacing: 0.4px;
+        }
+        .footer a {
+            color: var(--cyan);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.1s;
+        }
+        .footer a:hover {
+            border-bottom-color: var(--cyan);
+        }
+
+        /* scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-light);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--cyan-dim);
+        }
+
+        /* helpers */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+
+        <!-- header -->
+        <header class="head">
+            <h1><span class="dot"></span>bytebeat · player</h1>
+            <span class="badge">drop <code>.Bytebeat</code> files</span>
+        </header>
+
+        <!-- main grid -->
+        <div class="grid">
+
+            <!-- left: file panel -->
+            <section class="file-panel">
+                <div class="panel-head">
+                    <span>converted songs</span>
+                    <span class="file-count" id="fileCount">0</span>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="search by name or song..." />
+                </div>
+                <div class="file-list" id="fileList">
+                    <div class="empty">No files loaded yet.</div>
+                </div>
+                <div class="load-area">
+                    <label for="fileInput">＋ load .Bytebeat</label>
+                    <input type="file" id="fileInput" multiple accept=".Bytebeat,.txt" />
+                    <div class="file-meta-inputs">
+                        <input type="text" id="songNameInput" placeholder="song name (optional)" />
+                        <select id="copyrightSelect">
+                            <option value="original">personal creation</option>
+                            <option value="copyright">copyrighted material</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- right: player -->
+            <section class="player-panel">
+
+                <!-- code editor -->
+                <div class="code-area">
+                    <textarea id="codeEditor" spellcheck="false" placeholder="Bytebeat expression appears here after selecting a file."></textarea>
+                </div>
+
+                <!-- scope -->
+                <div class="scope-wrap">
+                    <canvas id="scopeCanvas"></canvas>
+                </div>
+
+                <!-- controls -->
+                <div class="controls">
+                    <button class="primary" id="playBtn">▶ Play</button>
+                    <button id="stopBtn">■ Stop</button>
+                    <div class="mode-group">
+                        <button data-mode="bytebeat" class="active">bytebeat</button>
+                        <button data-mode="signed">signed</button>
+                    </div>
+                    <div class="param-group">
+                        <span>speed</span>
+                        <input type="number" id="speedInput" value="1" step="0.1" min="0.01" />
+                    </div>
+                    <div class="param-group">
+                        <span>Hz</span>
+                        <input type="number" id="sampleRateInput" value="44100" step="100" min="4000" max="192000" />
+                    </div>
+                    <span class="status">
+                        <span class="playing-dot" id="playDot"></span>
+                        <span id="playStatus">idle</span>
+                    </span>
+                </div>
+
+            </section>
+        </div>
+
+        <!-- footer -->
+        <footer class="footer">
+            The converter is still in beta, and these files were made for testing.
+            If you have any suggestions, or improvements, please submit one in the
+            <a href="https://github.com/JohnDoedid/midi-to-bytebeat-stuff" target="_blank">repo</a>.
+            This webpage was automatically generated.
+        </footer>
+
+    </div>
+
+    <script>
+        (() => {
+            'use strict';
+
+            // ─── DOM refs ──────────────────────────────────────────────────
+            const fileList = document.getElementById('fileList');
+            const fileCount = document.getElementById('fileCount');
+            const fileInput = document.getElementById('fileInput');
+            const songNameInput = document.getElementById('songNameInput');
+            const copyrightSelect = document.getElementById('copyrightSelect');
+            const searchInput = document.getElementById('searchInput');
+            const codeEditor = document.getElementById('codeEditor');
+            const scopeCanvas = document.getElementById('scopeCanvas');
+            const playBtn = document.getElementById('playBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const playDot = document.getElementById('playDot');
+            const playStatus = document.getElementById('playStatus');
+            const modeButtons = document.querySelectorAll('.mode-group button');
+            const speedInput = document.getElementById('speedInput');
+            const sampleRateInput = document.getElementById('sampleRateInput');
+
+            // ─── state ──────────────────────────────────────────────────
+            let files = []; // { name, content, songName, copyright }
+            let activeFileIndex = -1;
+            let currentMode = 'bytebeat';
+            let speed = 1;
+            let sampleRate = 44100;
+            let searchQuery = '';
+
+            // audio
+            let audioCtx = null;
+            let scriptNode = null;
+            let playFn = null;
+            let sampleCounter = 0;
+            let lastBlock = null;
+            let rafId = null;
+            let isPlaying = false;
+
+            // ─── render file list (with search filter) ──────────────────
+
+            function renderFileList() {
+                const query = searchQuery.toLowerCase().trim();
+                const filtered = files.filter(f => {
+                    const nameMatch = f.name.toLowerCase().includes(query);
+                    const songMatch = (f.songName || '').toLowerCase().includes(query);
+                    return nameMatch || songMatch;
+                });
+
+                fileList.innerHTML = '';
+                if (filtered.length === 0) {
+                    fileList.innerHTML = '<div class="empty">' +
+                        (files.length === 0 ? 'No files loaded yet.' : 'No matches found.') +
+                        '</div>';
+                    fileCount.textContent = files.length;
+                    return;
+                }
+
+                filtered.forEach((f, idx) => {
+                    // find original index for active highlighting
+                    const originalIdx = files.indexOf(f);
+                    const div = document.createElement('div');
+                    div.className = 'file-item' + (originalIdx === activeFileIndex ? ' active' : '');
+
+                    const row = document.createElement('div');
+                    row.className = 'row';
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'name';
+                    nameSpan.textContent = f.songName || f.name;
+
+                    const removeSpan = document.createElement('span');
+                    removeSpan.className = 'remove';
+                    removeSpan.textContent = '✕';
+                    removeSpan.title = 'Remove file';
+                    removeSpan.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        removeFile(originalIdx);
+                    });
+
+                    row.appendChild(nameSpan);
+                    row.appendChild(removeSpan);
+
+                    const meta = document.createElement('div');
+                    meta.className = 'meta';
+                    const tag = document.createElement('span');
+                    tag.className = 'tag' + (f.copyright === 'original' ? ' original' : '');
+                    tag.textContent = f.copyright === 'original' ? 'original' : '© copyrighted';
+                    meta.appendChild(tag);
+                    const nameInfo = document.createElement('span');
+                    nameInfo.textContent = f.name;
+                    meta.appendChild(nameInfo);
+
+                    div.appendChild(row);
+                    div.appendChild(meta);
+
+                    div.addEventListener('click', () => loadFileByIndex(originalIdx));
+                    fileList.appendChild(div);
+                });
+
+                fileCount.textContent = files.length;
+            }
+
+            // ─── file operations ─────────────────────────────────────
+
+            function removeFile(index) {
+                files.splice(index, 1);
+                if (activeFileIndex === index) activeFileIndex = -1;
+                else if (activeFileIndex > index) activeFileIndex--;
+                if (files.length === 0) activeFileIndex = -1;
+                else if (activeFileIndex === -1) activeFileIndex = 0;
+                renderFileList();
+                if (activeFileIndex >= 0 && activeFileIndex < files.length) {
+                    loadFileByIndex(activeFileIndex);
+                } else {
+                    codeEditor.value = '';
+                    stopPlayback();
+                    playBtn.disabled = true;
+                }
+            }
+
+            function loadFileByIndex(index) {
+                if (index < 0 || index >= files.length) return;
+                activeFileIndex = index;
+                const f = files[index];
+                codeEditor.value = f.content;
+                renderFileList();
+                if (isPlaying) stopPlayback();
+                const displayName = f.songName || f.name;
+                playStatus.textContent = 'loaded · ' + displayName;
+                playBtn.disabled = false;
+            }
+
+            function addFiles(fileListObj) {
+                let added = 0;
+                const songName = songNameInput.value.trim() || '';
+                const copyright = copyrightSelect.value;
+
+                for (const file of fileListObj) {
+                    if (!file.name.toLowerCase().endsWith('.bytebeat') && !file.name.toLowerCase().endsWith('.txt'))
+                        continue;
+                    // avoid duplicates by name
+                    if (files.some(f => f.name === file.name)) continue;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const content = e.target.result;
+                        files.push({
+                            name: file.name,
+                            content,
+                            songName: songName || '',
+                            copyright: copyright
+                        });
+                        // if this is the first file, auto-select
+                        if (files.length === 1) {
+                            activeFileIndex = 0;
+                            loadFileByIndex(0);
+                        }
+                        renderFileList();
+                        if (files.length === 1) {
+                            if (activeFileIndex === -1) {
+                                activeFileIndex = 0;
+                                loadFileByIndex(0);
+                            }
+                        }
+                    };
+                    reader.readAsText(file);
+                    added++;
+                }
+                if (added === 0) {
+                    playStatus.textContent = 'no .Bytebeat files found in selection';
+                }
+                // clear inputs after adding
+                songNameInput.value = '';
+                copyrightSelect.value = 'original';
+            }
+
+            // ─── search handler ──────────────────────────────────────
+
+            searchInput.addEventListener('input', () => {
+                searchQuery = searchInput.value;
+                renderFileList();
+                // if currently selected file is hidden by filter, unload?
+                // we keep it loaded; user can still play. We just highlight.
+            });
+
+            // ─── file input events ────────────────────────────────────
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) {
+                    addFiles(e.target.files);
+                }
+                fileInput.value = '';
+            });
+
+            // drag & drop anywhere
+            document.addEventListener('dragover', (e) => e.preventDefault());
+            document.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const dt = e.dataTransfer;
+                if (dt && dt.files && dt.files.length) {
+                    addFiles(dt.files);
+                }
+            });
+
+            // ─── mode switching ──────────────────────────────────────
+
+            modeButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modeButtons.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    currentMode = btn.dataset.mode;
+                    if (isPlaying) {
+                        stopPlayback();
+                        startPlayback();
+                    }
+                });
+            });
+
+            // ─── speed & sample rate ─────────────────────────────────
+
+            speedInput.addEventListener('change', () => {
+                const val = parseFloat(speedInput.value);
+                if (!isNaN(val) && val > 0) speed = val;
+                else speedInput.value = speed;
+                if (isPlaying) {
+                    stopPlayback();
+                    startPlayback();
+                }
+            });
+
+            sampleRateInput.addEventListener('change', () => {
+                const val = parseInt(sampleRateInput.value, 10);
+                if (!isNaN(val) && val > 1000) sampleRate = val;
+                else sampleRateInput.value = sampleRate;
+                if (isPlaying) {
+                    stopPlayback();
+                    startPlayback();
+                }
+            });
+
+            // ─── playback ─────────────────────────────────────────────
+
+            function compileBytebeat(expr, mode) {
+                const mathDecls = Object.getOwnPropertyNames(Math).map(k => k + '=Math.' + k).join(',');
+                const stateVars = ['tick', 'd', 'i', 'x', 'p', 'q', 'r', 's', 'ph', 'g'];
+                const src =
+                    'var ' + mathDecls + ';\n' +
+                    'var ' + stateVars.join(',') + ';\n' +
+                    'return function(t){ return (' + expr + '); };';
+                try {
+                    return new Function(src)();
+                } catch (err) {
+                    throw new Error('Compile error: ' + err.message);
+                }
+            }
+
+            function sampleToFloat(value, mode) {
+                if (typeof value !== 'number' || !isFinite(value)) return 0;
+                let intVal = Math.round(value);
+                if (mode === 'bytebeat') {
+                    return ((intVal & 0xFF) / 127.5) - 1;
+                } else {
+                    intVal = ((intVal + 128) & 0xFF) - 128;
+                    return intVal / 127.5;
+                }
+            }
+
+            function startPlayback() {
+                const code = codeEditor.value.trim();
+                if (!code) {
+                    playStatus.textContent = 'no code to play';
+                    return;
+                }
+                if (isPlaying) stopPlayback();
+
+                let ctx;
+                try {
+                    ctx = new(window.AudioContext || window.webkitAudioContext)({ sampleRate: sampleRate });
+                } catch (e) {
+                    try {
+                        ctx = new(window.AudioContext || window.webkitAudioContext)();
+                    } catch (e2) {
+                        playStatus.textContent = 'WebAudio not supported';
+                        return;
+                    }
+                }
+                audioCtx = ctx;
+                sampleRateInput.value = ctx.sampleRate;
+
+                let compiled;
+                try {
+                    compiled = compileBytebeat(code, currentMode);
+                } catch (err) {
+                    playStatus.textContent = err.message;
+                    return;
+                }
+                playFn = compiled;
+                sampleCounter = 0;
+                const bufferSize = 2048;
+                scriptNode = ctx.createScriptProcessor(bufferSize, 0, 1);
+                scriptNode.onaudioprocess = (e) => {
+                    const out = e.outputBuffer.getChannelData(0);
+                    for (let i = 0; i < out.length; i++) {
+                        let v;
+                        try {
+                            v = playFn(sampleCounter);
+                        } catch (_) {
+                            v = 0;
+                        }
+                        sampleCounter += speed;
+                        out[i] = sampleToFloat(v, currentMode);
+                    }
+                    lastBlock = out.slice(0, 600);
+                };
+                scriptNode.connect(ctx.destination);
+                isPlaying = true;
+                playBtn.disabled = true;
+                stopBtn.disabled = false;
+                playDot.classList.add('on');
+                const f = files[activeFileIndex];
+                const name = f ? (f.songName || f.name) : '';
+                playStatus.textContent = 'playing · ' + name;
+                drawScopeLoop();
+            }
+
+            function stopPlayback() {
+                if (rafId) { cancelAnimationFrame(rafId);
+                    rafId = null; }
+                if (scriptNode) {
+                    try { scriptNode.disconnect(); } catch (_) {}
+                    scriptNode.onaudioprocess = null;
+                    scriptNode = null;
+                }
+                if (audioCtx) {
+                    try { audioCtx.close(); } catch (_) {}
+                    audioCtx = null;
+                }
+                isPlaying = false;
+                playFn = null;
+                lastBlock = null;
+                playBtn.disabled = false;
+                stopBtn.disabled = true;
+                playDot.classList.remove('on');
+                playStatus.textContent = 'stopped';
+                const canvas = scopeCanvas;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+
+            function drawScopeLoop() {
+                const canvas = scopeCanvas;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width,
+                    h = canvas.height;
+                const draw = () => {
+                    ctx.clearRect(0, 0, w, h);
+                    // grid
+                    ctx.strokeStyle = 'rgba(0, 180, 255, 0.06)';
+                    ctx.lineWidth = 1;
+                    for (let gx = 0; gx < w; gx += Math.round(w / 14)) {
+                        ctx.beginPath();
+                        ctx.moveTo(gx + 0.5, 0);
+                        ctx.lineTo(gx + 0.5, h);
+                        ctx.stroke();
+                    }
+                    for (let gy = 0; gy < h; gy += Math.round(h / 6)) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, gy + 0.5);
+                        ctx.lineTo(w, gy + 0.5);
+                        ctx.stroke();
+                    }
+                    ctx.strokeStyle = 'rgba(0, 180, 255, 0.15)';
+                    ctx.beginPath();
+                    ctx.moveTo(0, h / 2);
+                    ctx.lineTo(w, h / 2);
+                    ctx.stroke();
+
+                    if (lastBlock && lastBlock.length && isPlaying) {
+                        ctx.strokeStyle = '#00d4ff';
+                        ctx.lineWidth = 1.8;
+                        ctx.shadowColor = 'rgba(0, 212, 255, 0.3)';
+                        ctx.shadowBlur = 6;
+                        ctx.beginPath();
+                        const n = lastBlock.length;
+                        for (let i = 0; i < n; i++) {
+                            const x = (i / n) * w;
+                            const y = h / 2 - lastBlock[i] * (h / 2 - 6);
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.stroke();
+                        ctx.shadowBlur = 0;
+                    }
+                    if (isPlaying) {
+                        rafId = requestAnimationFrame(draw);
+                    }
+                };
+                draw();
+            }
+
+            // ─── button events ────────────────────────────────────────
+
+            playBtn.addEventListener('click', startPlayback);
+            stopBtn.addEventListener('click', stopPlayback);
+
+            // ─── resize scope ─────────────────────────────────────────
+
+            function resizeScope() {
+                const rect = scopeCanvas.parentElement.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                const w = rect.width * dpr;
+                const h = rect.height * dpr;
+                if (scopeCanvas.width !== w || scopeCanvas.height !== h) {
+                    scopeCanvas.width = w;
+                    scopeCanvas.height = h;
+                    scopeCanvas.style.width = rect.width + 'px';
+                    scopeCanvas.style.height = rect.height + 'px';
+                }
+            }
+            window.addEventListener('resize', resizeScope);
+            resizeScope();
+
+            // ─── initial state ────────────────────────────────────────
+
+            stopBtn.disabled = true;
+            playBtn.disabled = true;
+            renderFileList();
+
+        })();
+    </script>
+</body>
+</html>
