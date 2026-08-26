@@ -308,6 +308,84 @@
             background: var(--panel);
         }
 
+        /* ─── github api section ─── */
+        .github-section {
+            padding: 10px 14px;
+            border-top: 1px solid var(--border);
+            background: rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .github-section .label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-faint);
+            font-weight: 600;
+            width: 100%;
+            margin-bottom: 2px;
+        }
+        .github-section input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 11px;
+            padding: 5px 8px;
+            flex: 1;
+            min-width: 60px;
+        }
+        .github-section input:focus {
+            outline: none;
+            border-color: var(--cyan-dim);
+        }
+        .github-section input::placeholder {
+            color: var(--text-faint);
+            font-size: 10px;
+        }
+        .github-section .token-input {
+            flex: 2;
+            min-width: 120px;
+        }
+        .github-section .btn {
+            background: var(--cyan);
+            border: 1px solid var(--cyan);
+            color: #0a0c14;
+            font-family: var(--mono);
+            font-size: 11px;
+            padding: 5px 14px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.12s, border-color 0.12s;
+            white-space: nowrap;
+        }
+        .github-section .btn:hover {
+            background: #00e4ff;
+            border-color: #00e4ff;
+        }
+        .github-section .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background: var(--border);
+            border-color: var(--border);
+            color: var(--text-faint);
+        }
+        .github-section .status-msg {
+            font-size: 10px;
+            color: var(--text-faint);
+            width: 100%;
+            margin-top: 2px;
+            min-height: 1.4em;
+        }
+        .github-section .status-msg.success {
+            color: var(--cyan);
+        }
+        .github-section .status-msg.error {
+            color: var(--danger);
+        }
+
         /* ─── player panel ─── */
         .player-panel {
             border: 1px solid var(--border);
@@ -439,12 +517,18 @@
             font-family: var(--mono);
             font-size: 11px;
             padding: 3px 6px;
-            width: 56px;
+            width: 52px;
             text-align: center;
         }
         .controls .param-group input:focus {
             outline: none;
             border-color: var(--cyan-dim);
+        }
+        .controls .param-group .label-text {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: var(--text-faint);
         }
         .controls .status {
             font-size: 11px;
@@ -555,6 +639,16 @@
                         </select>
                     </div>
                 </div>
+                <!-- GitHub API section -->
+                <div class="github-section">
+                    <span class="label">load from repository</span>
+                    <input type="text" id="repoOwnerInput" placeholder="owner (e.g. JohnDoedid)" value="JohnDoedid" />
+                    <input type="text" id="repoNameInput" placeholder="repo (e.g. midi-to-bytebeat-stuff)" value="midi-to-bytebeat-stuff" />
+                    <input type="text" id="repoFolderInput" placeholder="folder (e.g. songs)" value="songs" />
+                    <input type="password" id="tokenInput" class="token-input" placeholder="GitHub token (optional)" />
+                    <button class="btn" id="loadRepoBtn">Load from Repo</button>
+                    <div class="status-msg" id="repoStatus">Enter your repo details and click Load.</div>
+                </div>
             </section>
 
             <!-- right: player -->
@@ -579,11 +673,15 @@
                         <button data-mode="signed">signed</button>
                     </div>
                     <div class="param-group">
-                        <span>speed</span>
+                        <span class="label-text">speed</span>
                         <input type="number" id="speedInput" value="1" step="0.1" min="0.01" />
                     </div>
                     <div class="param-group">
-                        <span>Hz</span>
+                        <span class="label-text">hold</span>
+                        <input type="number" id="holdDivisorInput" value="1" step="1" min="1" max="64" />
+                    </div>
+                    <div class="param-group">
+                        <span class="label-text">Hz</span>
                         <input type="number" id="sampleRateInput" value="44100" step="100" min="4000" max="192000" />
                     </div>
                     <span class="status">
@@ -624,13 +722,23 @@
             const playStatus = document.getElementById('playStatus');
             const modeButtons = document.querySelectorAll('.mode-group button');
             const speedInput = document.getElementById('speedInput');
+            const holdDivisorInput = document.getElementById('holdDivisorInput');
             const sampleRateInput = document.getElementById('sampleRateInput');
+
+            // GitHub API refs
+            const repoOwnerInput = document.getElementById('repoOwnerInput');
+            const repoNameInput = document.getElementById('repoNameInput');
+            const repoFolderInput = document.getElementById('repoFolderInput');
+            const tokenInput = document.getElementById('tokenInput');
+            const loadRepoBtn = document.getElementById('loadRepoBtn');
+            const repoStatus = document.getElementById('repoStatus');
 
             // ─── state ──────────────────────────────────────────────────
             let files = []; // { name, content, songName, copyright }
             let activeFileIndex = -1;
             let currentMode = 'bytebeat';
             let speed = 1;
+            let holdDivisor = 1;
             let sampleRate = 44100;
             let searchQuery = '';
 
@@ -642,6 +750,33 @@
             let lastBlock = null;
             let rafId = null;
             let isPlaying = false;
+
+            // sample-and-hold state
+            let heldValue = 0;
+            let lastSampleCounter = 0;
+
+            // ─── load token from sessionStorage ──────────────────────
+
+            function loadStoredToken() {
+                try {
+                    const stored = sessionStorage.getItem('github_token');
+                    if (stored) {
+                        tokenInput.value = stored;
+                    }
+                } catch (_) { /* ignore */ }
+            }
+
+            function storeToken(token) {
+                try {
+                    if (token && token.trim()) {
+                        sessionStorage.setItem('github_token', token.trim());
+                    } else {
+                        sessionStorage.removeItem('github_token');
+                    }
+                } catch (_) { /* ignore */ }
+            }
+
+            loadStoredToken();
 
             // ─── render file list (with search filter) ──────────────────
 
@@ -663,7 +798,6 @@
                 }
 
                 filtered.forEach((f, idx) => {
-                    // find original index for active highlighting
                     const originalIdx = files.indexOf(f);
                     const div = document.createElement('div');
                     div.className = 'file-item' + (originalIdx === activeFileIndex ? ' active' : '');
@@ -745,7 +879,6 @@
                 for (const file of fileListObj) {
                     if (!file.name.toLowerCase().endsWith('.bytebeat') && !file.name.toLowerCase().endsWith('.txt'))
                         continue;
-                    // avoid duplicates by name
                     if (files.some(f => f.name === file.name)) continue;
                     const reader = new FileReader();
                     reader.onload = (e) => {
@@ -756,7 +889,6 @@
                             songName: songName || '',
                             copyright: copyright
                         });
-                        // if this is the first file, auto-select
                         if (files.length === 1) {
                             activeFileIndex = 0;
                             loadFileByIndex(0);
@@ -775,9 +907,126 @@
                 if (added === 0) {
                     playStatus.textContent = 'no .Bytebeat files found in selection';
                 }
-                // clear inputs after adding
                 songNameInput.value = '';
                 copyrightSelect.value = 'original';
+            }
+
+            // ─── GitHub API: load files from repo ────────────────────
+
+            async function loadFilesFromRepo() {
+                const owner = repoOwnerInput.value.trim();
+                const repo = repoNameInput.value.trim();
+                const folder = repoFolderInput.value.trim();
+                const token = tokenInput.value.trim();
+
+                if (!owner || !repo) {
+                    repoStatus.textContent = 'Please enter owner and repository name.';
+                    repoStatus.className = 'status-msg error';
+                    return;
+                }
+
+                // Store token if provided
+                storeToken(token);
+
+                repoStatus.textContent = 'Fetching files from ' + owner + '/' + repo + '/' + (folder || '') + '...';
+                repoStatus.className = 'status-msg';
+                loadRepoBtn.disabled = true;
+
+                try {
+                    // Use the GitHub API to get the tree
+                    // First, get the root tree recursively
+                    const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/master?recursive=1`;
+                    const headers = {
+                        'Accept': 'application/vnd.github.v3+json'
+                    };
+                    if (token) {
+                        headers['Authorization'] = 'token ' + token;
+                    }
+
+                    const response = await fetch(treeUrl, { headers });
+                    if (!response.ok) {
+                        let errMsg = `GitHub API error: ${response.status}`;
+                        if (response.status === 401) {
+                            errMsg += ' — invalid or missing token.';
+                        } else if (response.status === 404) {
+                            errMsg += ' — repo or folder not found. Check owner/repo name.';
+                        } else if (response.status === 403) {
+                            errMsg += ' — rate limit exceeded. Try adding a token.';
+                        }
+                        throw new Error(errMsg);
+                    }
+
+                    const data = await response.json();
+                    if (!data.tree) {
+                        throw new Error('No tree data returned from GitHub API.');
+                    }
+
+                    // Filter for .Bytebeat files in the specified folder
+                    const folderPrefix = folder ? folder + '/' : '';
+                    const bytebeatFiles = data.tree.filter(item =>
+                        item.type === 'blob' &&
+                        item.path.startsWith(folderPrefix) &&
+                        (item.path.toLowerCase().endsWith('.bytebeat') || item.path.toLowerCase().endsWith('.txt'))
+                    );
+
+                    if (bytebeatFiles.length === 0) {
+                        repoStatus.textContent = `No .Bytebeat files found in ${folderPrefix || 'root'}.`;
+                        repoStatus.className = 'status-msg error';
+                        loadRepoBtn.disabled = false;
+                        return;
+                    }
+
+                    repoStatus.textContent = `Found ${bytebeatFiles.length} files. Loading contents...`;
+                    repoStatus.className = 'status-msg';
+
+                    // Load each file's content
+                    let loaded = 0;
+                    for (const item of bytebeatFiles) {
+                        try {
+                            const contentUrl =
+                                `https://api.github.com/repos/${owner}/${repo}/contents/${item.path}`;
+                            const contentResponse = await fetch(contentUrl, { headers });
+                            if (!contentResponse.ok) continue;
+                            const contentData = await contentResponse.json();
+                            if (contentData.content) {
+                                const content = atob(contentData.content.replace(/\s/g, ''));
+                                const fileName = item.path.split('/').pop();
+                                // Avoid duplicates
+                                if (!files.some(f => f.name === fileName)) {
+                                    files.push({
+                                        name: fileName,
+                                        content: content,
+                                        songName: '',
+                                        copyright: 'original'
+                                    });
+                                    loaded++;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Failed to load:', item.path, e);
+                        }
+                    }
+
+                    if (loaded === 0) {
+                        repoStatus.textContent = 'Failed to load any files. Check your token permissions.';
+                        repoStatus.className = 'status-msg error';
+                    } else {
+                        repoStatus.textContent = `✅ Loaded ${loaded} files from ${owner}/${repo}.`;
+                        repoStatus.className = 'status-msg success';
+                        // Auto-select first file
+                        if (files.length > 0 && activeFileIndex === -1) {
+                            activeFileIndex = 0;
+                            loadFileByIndex(0);
+                        }
+                        renderFileList();
+                    }
+
+                } catch (err) {
+                    repoStatus.textContent = '❌ ' + err.message;
+                    repoStatus.className = 'status-msg error';
+                }
+
+                loadRepoBtn.disabled = false;
             }
 
             // ─── search handler ──────────────────────────────────────
@@ -785,8 +1034,6 @@
             searchInput.addEventListener('input', () => {
                 searchQuery = searchInput.value;
                 renderFileList();
-                // if currently selected file is hidden by filter, unload?
-                // we keep it loaded; user can still play. We just highlight.
             });
 
             // ─── file input events ────────────────────────────────────
@@ -798,7 +1045,7 @@
                 fileInput.value = '';
             });
 
-            // drag & drop anywhere
+            // drag & drop
             document.addEventListener('dragover', (e) => e.preventDefault());
             document.addEventListener('drop', (e) => {
                 e.preventDefault();
@@ -807,6 +1054,10 @@
                     addFiles(dt.files);
                 }
             });
+
+            // ─── load from repo button ───────────────────────────────
+
+            loadRepoBtn.addEventListener('click', loadFilesFromRepo);
 
             // ─── mode switching ──────────────────────────────────────
 
@@ -822,12 +1073,22 @@
                 });
             });
 
-            // ─── speed & sample rate ─────────────────────────────────
+            // ─── speed, hold divisor & sample rate ──────────────────
 
             speedInput.addEventListener('change', () => {
                 const val = parseFloat(speedInput.value);
                 if (!isNaN(val) && val > 0) speed = val;
                 else speedInput.value = speed;
+                if (isPlaying) {
+                    stopPlayback();
+                    startPlayback();
+                }
+            });
+
+            holdDivisorInput.addEventListener('change', () => {
+                const val = parseInt(holdDivisorInput.value, 10);
+                if (!isNaN(val) && val >= 1) holdDivisor = Math.min(val, 64);
+                else holdDivisorInput.value = holdDivisor;
                 if (isPlaying) {
                     stopPlayback();
                     startPlayback();
@@ -902,16 +1163,26 @@
                 }
                 playFn = compiled;
                 sampleCounter = 0;
+                heldValue = 0;
+                lastSampleCounter = 0;
+
                 const bufferSize = 2048;
                 scriptNode = ctx.createScriptProcessor(bufferSize, 0, 1);
                 scriptNode.onaudioprocess = (e) => {
                     const out = e.outputBuffer.getChannelData(0);
                     for (let i = 0; i < out.length; i++) {
+                        // Sample-and-hold: only evaluate when sampleCounter % holdDivisor === 0
+                        const shouldEvaluate = (sampleCounter % holdDivisor === 0);
                         let v;
-                        try {
-                            v = playFn(sampleCounter);
-                        } catch (_) {
-                            v = 0;
+                        if (shouldEvaluate) {
+                            try {
+                                v = playFn(sampleCounter);
+                            } catch (_) {
+                                v = 0;
+                            }
+                            heldValue = v;
+                        } else {
+                            v = heldValue; // hold the last value
                         }
                         sampleCounter += speed;
                         out[i] = sampleToFloat(v, currentMode);
@@ -1031,6 +1302,11 @@
             stopBtn.disabled = true;
             playBtn.disabled = true;
             renderFileList();
+
+            // Auto-fill default repo values
+            repoOwnerInput.value = 'JohnDoedid';
+            repoNameInput.value = 'midi-to-bytebeat-stuff';
+            repoFolderInput.value = 'songs';
 
         })();
     </script>
